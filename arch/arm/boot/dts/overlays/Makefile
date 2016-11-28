@@ -14,6 +14,8 @@ endif
 
 dtbo-$(RPI_DT_OVERLAYS) += ads7846.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += akkordion-iqdacplus.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += allo-piano-dac-pcm512x-audio.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += allo-piano-dac-plus-pcm512x-audio.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += at86rf233.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += bmp085_i2c-sensor.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += boomberry-dac.dtbo
@@ -86,8 +88,6 @@ dtbo-$(RPI_DT_OVERLAYS) += vga666.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += w1-gpio.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += w1-gpio-pullup.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += wittypi.dtbo
-dtbo-$(RPI_DT_OVERLAYS) += piano-dac.dtbo
-dtbo-$(RPI_DT_OVERLAYS) += piano-dac-plus.dtbo
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)

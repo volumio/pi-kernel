@@ -86,6 +86,8 @@ dtbo-$(RPI_DT_OVERLAYS) += vga666.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += w1-gpio.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += w1-gpio-pullup.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += wittypi.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += piano-dac.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += piano-dac-plus.dtbo
 
 targets += dtbs dtbs_install
 targets += $(dtbo-y)

@@ -23,6 +23,7 @@
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
+#include "../codecs/pcm512x.h"
 
 static bool digital_gain_0db_limit = true;
 
@@ -47,9 +48,43 @@ static int snd_allo_piano_dac_hw_params(
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	int ret = 0, val = 0;
 
 	unsigned int sample_bits =
 		snd_pcm_format_physical_width(params_format(params));
+
+	val = snd_soc_read(rtd->codec, PCM512x_RATE_DET_4);
+	if (val < 0) {
+		dev_err(rtd->codec->dev,
+				"Failed to read register PCM512x_RATE_DET_4\n");
+			return val;
+	}
+
+	if (val & 0x40) {
+		ret = snd_soc_write(rtd->codec,
+					PCM512x_PLL_REF,
+					PCM512x_SREF_BCK);
+		if (ret < 0)
+			return ret;
+
+		dev_info(rtd->codec->dev,
+			"Setting BCLK as input clock and Enable PLL\n");
+	} else {
+		ret = snd_soc_write(rtd->codec,
+					PCM512x_PLL_EN,
+					0x00);
+		if (ret < 0)
+			return ret;
+
+		ret = snd_soc_write(rtd->codec,
+					PCM512x_PLL_REF,
+					PCM512x_SREF_SCK);
+		if (ret < 0)
+			return ret;
+
+		dev_info(rtd->codec->dev,
+			"Setting SCLK as input clock and disabled PLL\n");
+	}
 
 	return snd_soc_dai_set_bclk_ratio(cpu_dai, sample_bits * 2);
 }

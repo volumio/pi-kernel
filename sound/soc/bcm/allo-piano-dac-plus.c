@@ -96,24 +96,27 @@ static int __snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
 	else
 		rate = 192000;
 
+	if ((lowpass > 14) || (lowpass < 0))
+		lowpass = 3;
+	if ((mode > 2) || (mode < 0))
+		mode = 0;
+
 	/* same configuration loaded */
 	if ((rate == glb_ptr->set_rate) && (lowpass == glb_ptr->set_lowpass)
 			&& (mode == glb_ptr->set_mode))
 		return 0;
 
-	glb_ptr->set_rate = rate;
-	glb_ptr->set_mode = mode;
-
 	if (mode == 0) { /* 2.0 */
 		snd_soc_write(rtd->codec_dais[1]->codec,
-			PCM512x_MUTE, 0x11);
+				PCM512x_MUTE, 0x11);
+		glb_ptr->set_rate = rate;
+		glb_ptr->set_mode = mode;
+		glb_ptr->set_lowpass = lowpass;
 		return 1;
 	} else {
 		snd_soc_write(rtd->codec_dais[1]->codec,
-			PCM512x_MUTE, 0x00);
+				PCM512x_MUTE, 0x00);
 	}
-
-	glb_ptr->set_lowpass = lowpass;
 
 	for (dac = 0; dac < rtd->num_codecs; dac++) {
 		struct dsp_code *dsp_code_read;
@@ -122,24 +125,23 @@ static int __snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
 
 		if (dac == 0) { /* high */
 			sprintf(firmware_name,
-				"alloPiano/2.2/allo-piano-dsp-%d-%d-%d.bin",
-				rate, ((glb_ptr->set_lowpass * 10) + 60), dac);
+				"allo/piano/2.2/allo-piano-dsp-%d-%d-%d.bin",
+				rate, ((lowpass * 10) + 60), dac);
 		} else { /* low */
 			sprintf(firmware_name,
-				"alloPiano/2.%d/allo-piano-dsp-%d-%d-%d.bin",
-				glb_ptr->set_mode, rate,
-				((glb_ptr->set_lowpass * 10) + 60), dac);
+				"allo/piano/2.%d/allo-piano-dsp-%d-%d-%d.bin",
+				mode, rate, ((lowpass * 10) + 60), dac);
 		}
 
 		dev_info(codec->dev, "Dsp Firmware File Name: %s\n",
-			firmware_name);
+				firmware_name);
 
 		ret = request_firmware(&fw, firmware_name, codec->dev);
 		if (ret < 0) {
 			dev_err(codec->dev,
-				"Error: AlloPiano Firmware %s missing. %d\n",
+				"Error: Allo Piano Firmware %s missing. %d\n",
 				firmware_name, ret);
-			continue;
+			goto err;
 		}
 
 		while (i < (fw->size - 1)) {
@@ -157,18 +159,24 @@ static int __snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
 						glb_ptr->dsp_page_number) +
 					dsp_code_read->offset),
 					dsp_code_read->val);
-
 			}
 			if (ret < 0) {
 				dev_err(codec->dev,
 					"Failed to write Register: %d\n", ret);
-				break;
+				release_firmware(fw);
+				goto err;
 			}
 			i = i + 3;
 		}
 		release_firmware(fw);
 	}
+	glb_ptr->set_rate = rate;
+	glb_ptr->set_mode = mode;
+	glb_ptr->set_lowpass = lowpass;
 	return 1;
+
+err:
+	return ret;
 }
 
 static int snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
@@ -389,7 +397,44 @@ static int snd_allo_piano_dac_hw_params(
 	unsigned int rate = params_rate(params);
 	struct snd_soc_card *card = rtd->card;
 	struct glb_pool *glb_ptr = card->drvdata;
-	int ret = 0;
+	int ret = 0, val = 0, dac;
+
+	for (dac = 0; dac < 2; dac++) {
+		/* Configure the PLL clock reference for both the Codecs */
+		val = snd_soc_read(rtd->codec_dais[dac]->codec,
+					PCM512x_RATE_DET_4);
+		if (val < 0) {
+			dev_err(rtd->codec_dais[dac]->codec->dev,
+				"Failed to read register PCM512x_RATE_DET_4\n");
+			return val;
+		}
+
+		if (val & 0x40) {
+			ret = snd_soc_write(rtd->codec_dais[dac]->codec,
+						PCM512x_PLL_REF,
+						PCM512x_SREF_BCK);
+			if (ret < 0)
+				return ret;
+
+			dev_info(rtd->codec_dais[dac]->codec->dev,
+				"Setting BCLK as input clock & Enable PLL\n");
+		} else {
+			ret = snd_soc_write(rtd->codec_dais[dac]->codec,
+						PCM512x_PLL_EN,
+						0x00);
+			if (ret < 0)
+				return ret;
+
+			ret = snd_soc_write(rtd->codec_dais[dac]->codec,
+						PCM512x_PLL_REF,
+						PCM512x_SREF_SCK);
+			if (ret < 0)
+				return ret;
+
+			dev_info(rtd->codec_dais[dac]->codec->dev,
+				"Setting SCLK as input clock & disabled PLL\n");
+		}
+	}
 
 	if (digital_gain_0db_limit) {
 		ret = snd_soc_limit_volume(card,
@@ -454,6 +499,7 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 	struct snd_soc_card *card = &snd_allo_piano_dac;
 
 	card->dev = &pdev->dev;
+	platform_set_drvdata(pdev, &snd_allo_piano_dac);
 
 	if (pdev->dev.of_node) {
 		struct device_node *i2s_node;
@@ -461,7 +507,7 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 
 		dai = &snd_allo_piano_dac_dai[0];
 		i2s_node = of_parse_phandle(pdev->dev.of_node,
-				"i2s-controller", 0);
+						"i2s-controller", 0);
 		if (i2s_node) {
 			for (i = 0; i < card->num_links; i++) {
 				dai->cpu_dai_name = NULL;
@@ -472,7 +518,7 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 		}
 		digital_gain_0db_limit =
 			!of_property_read_bool(pdev->dev.of_node,
-					"allo,24db_digital_gain");
+						"allo,24db_digital_gain");
 
 		allo_piano_2_1_codecs[0].of_node =
 			of_parse_phandle(pdev->dev.of_node, "audio-codec", 0);
@@ -503,6 +549,9 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 
 static int snd_allo_piano_dac_remove(struct platform_device *pdev)
 {
+	struct snd_soc_card *card = platform_get_drvdata(pdev);
+
+	kfree(&card->drvdata);
 	return snd_soc_unregister_card(&snd_allo_piano_dac);
 }
 

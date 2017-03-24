@@ -17,6 +17,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/gpio/consumer.h>
 #include <linux/platform_device.h>
 
 #include <sound/core.h>
@@ -43,6 +44,8 @@ struct glb_pool {
 };
 
 static bool digital_gain_0db_limit = true;
+
+static struct gpio_desc *mute_gpio[2];
 
 static const char * const allo_piano_mode_texts[] = {
 	"2.0",
@@ -120,8 +123,8 @@ static int __snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
 
 	for (dac = 0; dac < rtd->num_codecs; dac++) {
 		struct dsp_code *dsp_code_read;
-		int i = 1;
 		struct snd_soc_codec *codec = rtd->codec_dais[dac]->codec;
+		int i = 1;
 
 		if (dac == 0) { /* high */
 			sprintf(firmware_name,
@@ -386,6 +389,60 @@ static int snd_allo_piano_dac_init(struct snd_soc_pcm_runtime *rtd)
 	return 0;
 }
 
+static void snd_allo_piano_gpio_mute(struct snd_soc_card *card)
+{
+	if (mute_gpio[0]) {
+		dev_info(card->dev, "Muting DAC using GPIO6\n");
+		gpiod_set_value_cansleep(mute_gpio[0], 1);
+	}
+	if (mute_gpio[1]) {
+		dev_info(card->dev, "Muting DAC using GPIO25\n");
+		gpiod_set_value_cansleep(mute_gpio[1], 1);
+	}
+}
+
+static void snd_allo_piano_gpio_unmute(struct snd_soc_card *card)
+{
+	if (mute_gpio[0]) {
+		dev_info(card->dev, "Un-muting DAC using GPIO6\n");
+		gpiod_set_value_cansleep(mute_gpio[0], 0);
+	}
+	if (mute_gpio[1]) {
+		dev_info(card->dev, "Un-muting DAC using GPIO25\n");
+		gpiod_set_value_cansleep(mute_gpio[1], 0);
+	}
+}
+
+static int snd_allo_piano_set_bias_level(struct snd_soc_card *card,
+	struct snd_soc_dapm_context *dapm, enum snd_soc_bias_level level)
+{
+	struct snd_soc_dai *codec_dai = card->rtd[0].codec_dai;
+
+	if (dapm->dev != codec_dai->dev)
+		return 0;
+
+	switch (level) {
+	case SND_SOC_BIAS_PREPARE:
+		if (dapm->bias_level != SND_SOC_BIAS_STANDBY)
+			break;
+		/* UNMUTE DAC */
+		snd_allo_piano_gpio_unmute(card);
+		break;
+
+	case SND_SOC_BIAS_STANDBY:
+		if (dapm->bias_level != SND_SOC_BIAS_PREPARE)
+			break;
+		/* MUTE DAC */
+		snd_allo_piano_gpio_mute(card);
+		break;
+
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static int snd_allo_piano_dac_hw_params(
 		struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *params)
@@ -397,6 +454,8 @@ static int snd_allo_piano_dac_hw_params(
 	unsigned int rate = params_rate(params);
 	struct snd_soc_card *card = rtd->card;
 	struct glb_pool *glb_ptr = card->drvdata;
+	int ret = 0;
+#if 0
 	int ret = 0, val = 0, dac;
 
 	for (dac = 0; dac < 2; dac++) {
@@ -436,6 +495,7 @@ static int snd_allo_piano_dac_hw_params(
 		}
 	}
 
+#endif
 	if (digital_gain_0db_limit) {
 		ret = snd_soc_limit_volume(card,
 				"Subwoofer Playback Volume", 207);
@@ -495,8 +555,8 @@ static struct snd_soc_card snd_allo_piano_dac = {
 
 static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 {
-	int ret = 0, i = 0;
 	struct snd_soc_card *card = &snd_allo_piano_dac;
+	int ret = 0, i = 0;
 
 	card->dev = &pdev->dev;
 	platform_set_drvdata(pdev, &snd_allo_piano_dac);
@@ -536,12 +596,39 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 			return -EINVAL;
 		}
 
+		mute_gpio[0] = devm_gpiod_get_optional(&pdev->dev, "mute1",
+							GPIOD_OUT_LOW);
+		if (IS_ERR(mute_gpio[0])) {
+			ret = PTR_ERR(mute_gpio[0]);
+			dev_err(&pdev->dev,
+				"failed to get mute1 gpio6: %d\n", ret);
+			return ret;
+		}
+
+		mute_gpio[1] = devm_gpiod_get_optional(&pdev->dev, "mute2",
+							GPIOD_OUT_LOW);
+		if (IS_ERR(mute_gpio[1])) {
+			ret = PTR_ERR(mute_gpio[1]);
+			dev_err(&pdev->dev,
+				"failed to get mute2 gpio25: %d\n", ret);
+			return ret;
+		}
+
+		if (mute_gpio[0] && mute_gpio[1])
+			snd_allo_piano_dac.set_bias_level =
+				snd_allo_piano_set_bias_level;
+
 		ret = snd_soc_register_card(&snd_allo_piano_dac);
-		if (ret < 0)
+		if (ret < 0) {
 			dev_err(&pdev->dev,
 				"snd_soc_register_card() failed: %d\n", ret);
+			return ret;
+		}
 
-		return ret;
+		if ((mute_gpio[0]) && (mute_gpio[1]))
+			snd_allo_piano_gpio_mute(&snd_allo_piano_dac);
+
+		return 0;
 	}
 
 	return -EINVAL;
@@ -552,6 +639,7 @@ static int snd_allo_piano_dac_remove(struct platform_device *pdev)
 	struct snd_soc_card *card = platform_get_drvdata(pdev);
 
 	kfree(&card->drvdata);
+	snd_allo_piano_gpio_mute(&snd_allo_piano_dac);
 	return snd_soc_unregister_card(&snd_allo_piano_dac);
 }
 

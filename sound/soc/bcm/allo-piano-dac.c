@@ -48,11 +48,11 @@ static int snd_allo_piano_dac_hw_params(
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
-	int ret = 0, val = 0;
 
 	unsigned int sample_bits =
 		snd_pcm_format_physical_width(params_format(params));
-
+#if 0
+	int ret = 0, val = 0;
 	val = snd_soc_read(rtd->codec, PCM512x_RATE_DET_4);
 	if (val < 0) {
 		dev_err(rtd->codec->dev,
@@ -85,7 +85,7 @@ static int snd_allo_piano_dac_hw_params(
 		dev_info(rtd->codec->dev,
 			"Setting SCLK as input clock and disabled PLL\n");
 	}
-
+#endif
 	return snd_soc_dai_set_bclk_ratio(cpu_dai, sample_bits * 2);
 }
 

@@ -17,9 +17,8 @@
  */
 
 #include <linux/module.h>
-#include <linux/gpio/consumer.h>
 #include <linux/platform_device.h>
-
+#include <linux/gpio/consumer.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -44,8 +43,10 @@ struct glb_pool {
 };
 
 static bool digital_gain_0db_limit = true;
+bool glb_mclk;
 
 static struct gpio_desc *mute_gpio[2];
+
 
 static const char * const allo_piano_mode_texts[] = {
 	"2.0",
@@ -391,26 +392,20 @@ static int snd_allo_piano_dac_init(struct snd_soc_pcm_runtime *rtd)
 
 static void snd_allo_piano_gpio_mute(struct snd_soc_card *card)
 {
-	if (mute_gpio[0]) {
-		dev_info(card->dev, "Muting DAC using GPIO6\n");
+	if (mute_gpio[0])
 		gpiod_set_value_cansleep(mute_gpio[0], 1);
-	}
-	if (mute_gpio[1]) {
-		dev_info(card->dev, "Muting DAC using GPIO25\n");
+
+	if (mute_gpio[1])
 		gpiod_set_value_cansleep(mute_gpio[1], 1);
-	}
 }
 
 static void snd_allo_piano_gpio_unmute(struct snd_soc_card *card)
 {
-	if (mute_gpio[0]) {
-		dev_info(card->dev, "Un-muting DAC using GPIO6\n");
+	if (mute_gpio[0])
 		gpiod_set_value_cansleep(mute_gpio[0], 0);
-	}
-	if (mute_gpio[1]) {
-		dev_info(card->dev, "Un-muting DAC using GPIO25\n");
+
+	if (mute_gpio[1])
 		gpiod_set_value_cansleep(mute_gpio[1], 0);
-	}
 }
 
 static int snd_allo_piano_set_bias_level(struct snd_soc_card *card,
@@ -443,6 +438,17 @@ static int snd_allo_piano_set_bias_level(struct snd_soc_card *card,
 	return 0;
 }
 
+static int snd_allo_piano_dac_startup(
+	struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_card *card = rtd->card;
+
+	snd_allo_piano_gpio_mute(card);
+
+	return 0;
+}
+
 static int snd_allo_piano_dac_hw_params(
 		struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *params)
@@ -454,11 +460,9 @@ static int snd_allo_piano_dac_hw_params(
 	unsigned int rate = params_rate(params);
 	struct snd_soc_card *card = rtd->card;
 	struct glb_pool *glb_ptr = card->drvdata;
-	int ret = 0;
-#if 0
 	int ret = 0, val = 0, dac;
 
-	for (dac = 0; dac < 2; dac++) {
+	for (dac = 0; (glb_mclk && dac < 2); dac++) {
 		/* Configure the PLL clock reference for both the Codecs */
 		val = snd_soc_read(rtd->codec_dais[dac]->codec,
 					PCM512x_RATE_DET_4);
@@ -469,33 +473,26 @@ static int snd_allo_piano_dac_hw_params(
 		}
 
 		if (val & 0x40) {
-			ret = snd_soc_write(rtd->codec_dais[dac]->codec,
-						PCM512x_PLL_REF,
-						PCM512x_SREF_BCK);
-			if (ret < 0)
-				return ret;
+			snd_soc_write(rtd->codec_dais[dac]->codec,
+					PCM512x_PLL_REF,
+					PCM512x_SREF_BCK);
 
 			dev_info(rtd->codec_dais[dac]->codec->dev,
 				"Setting BCLK as input clock & Enable PLL\n");
 		} else {
-			ret = snd_soc_write(rtd->codec_dais[dac]->codec,
-						PCM512x_PLL_EN,
-						0x00);
-			if (ret < 0)
-				return ret;
+			snd_soc_write(rtd->codec_dais[dac]->codec,
+					PCM512x_PLL_EN,
+					0x00);
 
-			ret = snd_soc_write(rtd->codec_dais[dac]->codec,
-						PCM512x_PLL_REF,
-						PCM512x_SREF_SCK);
-			if (ret < 0)
-				return ret;
+			snd_soc_write(rtd->codec_dais[dac]->codec,
+					PCM512x_PLL_REF,
+					PCM512x_SREF_SCK);
 
 			dev_info(rtd->codec_dais[dac]->codec->dev,
 				"Setting SCLK as input clock & disabled PLL\n");
 		}
 	}
 
-#endif
 	if (digital_gain_0db_limit) {
 		ret = snd_soc_limit_volume(card,
 				"Subwoofer Playback Volume", 207);
@@ -513,9 +510,21 @@ static int snd_allo_piano_dac_hw_params(
 	return ret;
 }
 
+static int snd_allo_piano_dac_prepare(
+	struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_card *card = rtd->card;
+
+	snd_allo_piano_gpio_unmute(card);
+	return 0;
+}
+
 /* machine stream operations */
 static struct snd_soc_ops snd_allo_piano_dac_ops = {
+	.startup = snd_allo_piano_dac_startup,
 	.hw_params = snd_allo_piano_dac_hw_params,
+	.prepare = snd_allo_piano_dac_prepare,
 };
 
 static struct snd_soc_dai_link_component allo_piano_2_1_codecs[] = {
@@ -579,6 +588,9 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 		digital_gain_0db_limit =
 			!of_property_read_bool(pdev->dev.of_node,
 						"allo,24db_digital_gain");
+
+		glb_mclk = of_property_read_bool(pdev->dev.of_node,
+						"allo,glb_mclk");
 
 		allo_piano_2_1_codecs[0].of_node =
 			of_parse_phandle(pdev->dev.of_node, "audio-codec", 0);

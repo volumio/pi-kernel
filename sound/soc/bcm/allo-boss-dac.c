@@ -232,18 +232,14 @@ static int snd_allo_boss_set_bclk_ratio_pro(
 
 static void snd_allo_boss_gpio_mute(struct snd_soc_card *card)
 {
-	if (mute_gpio) {
-		dev_info(card->dev, "Muting DAC using GPIO6\n");
-		gpiod_set_value_cansleep(mute_gpio, 1); 
-	}
+	if (mute_gpio)
+		gpiod_set_value_cansleep(mute_gpio, 1);
 }
 
 static void snd_allo_boss_gpio_unmute(struct snd_soc_card *card)
 {
-	if (mute_gpio) {
-		dev_info(card->dev, "Un-muting DAC using GPIO6\n");
+	if (mute_gpio)
 		gpiod_set_value_cansleep(mute_gpio, 0);
-	}
 }
 
 static int snd_allo_boss_set_bias_level(struct snd_soc_card *card,
@@ -298,7 +294,6 @@ static int snd_allo_boss_hw_params(
 				substream, params);
 	} else {
 		ret = snd_soc_dai_set_bclk_ratio(cpu_dai, sample_bits * 2);
-
 	}
 	return ret;
 }
@@ -308,8 +303,10 @@ static int snd_allo_boss_startup(
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_codec *codec = rtd->codec;
+	struct snd_soc_card *card = rtd->card;
 
 	snd_soc_update_bits(codec, PCM512x_GPIO_CONTROL_1, 0x08, 0x08);
+	snd_allo_boss_gpio_mute(card);
 
 	if (snd_soc_allo_boss_master) {
 		struct pcm512x_priv *priv = snd_soc_codec_get_drvdata(codec);
@@ -335,11 +332,21 @@ static void snd_allo_boss_shutdown(
 	snd_soc_update_bits(codec, PCM512x_GPIO_CONTROL_1, 0x08, 0x00);
 }
 
+static int snd_allo_boss_prepare(
+	struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_card *card = rtd->card;
+
+	snd_allo_boss_gpio_unmute(card);
+	return 0;
+}
 /* machine stream operations */
 static struct snd_soc_ops snd_allo_boss_ops = {
 	.hw_params = snd_allo_boss_hw_params,
 	.startup = snd_allo_boss_startup,
 	.shutdown = snd_allo_boss_shutdown,
+	.prepare = snd_allo_boss_prepare,
 };
 
 static struct snd_soc_dai_link snd_allo_boss_dai[] = {
@@ -378,7 +385,7 @@ static int snd_allo_boss_probe(struct platform_device *pdev)
 
 		dai = &snd_allo_boss_dai[0];
 		i2s_node = of_parse_phandle(pdev->dev.of_node,
-						"i2s-controller", 0);
+					    "i2s-controller", 0);
 
 		if (i2s_node) {
 			dai->cpu_dai_name = NULL;

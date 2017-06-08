@@ -43,6 +43,7 @@
 		piano_dac: __overlay__ {
 			compatible = "allo,piano-dac";
 			i2s-controller = <&i2s>;
+			mute-gpios = <&gpio 6 1>;
 			status = "okay";
 		};
 	};
@@ -50,5 +51,7 @@
 	__overrides__ {
 		24db_digital_gain =
 			<&piano_dac>,"allo,24db_digital_gain?";
+		glb_mclk =
+			<&piano_dac>,"allo,glb_mclk?";
 	};
 };

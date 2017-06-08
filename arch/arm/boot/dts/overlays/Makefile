@@ -14,8 +14,10 @@ endif
 
 dtbo-$(RPI_DT_OVERLAYS) += ads7846.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += akkordion-iqdacplus.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += allo-boss-dac-pcm512x-audio.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += allo-piano-dac-pcm512x-audio.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += allo-piano-dac-plus-pcm512x-audio.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += allo-digione.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += at86rf233.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += bmp085_i2c-sensor.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += boomberry-dac.dtbo

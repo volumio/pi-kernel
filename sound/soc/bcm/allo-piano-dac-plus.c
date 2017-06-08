@@ -18,7 +18,7 @@
 
 #include <linux/module.h>
 #include <linux/platform_device.h>
-
+#include <linux/gpio/consumer.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -43,11 +43,16 @@ struct glb_pool {
 };
 
 static bool digital_gain_0db_limit = true;
+bool glb_mclk;
+
+static struct gpio_desc *mute_gpio[2];
 
 static const char * const allo_piano_mode_texts[] = {
 	"2.0",
 	"2.1",
 	"2.2",
+	"Dual Stereo",
+	"Dual Mono",
 };
 
 static const SOC_ENUM_SINGLE_DECL(allo_piano_mode_enum,
@@ -96,50 +101,74 @@ static int __snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
 	else
 		rate = 192000;
 
+	if ((lowpass > 14) || (lowpass < 0))
+		lowpass = 3;
+	if ((mode > 4) || (mode < 0))
+		mode = 0;
+
 	/* same configuration loaded */
 	if ((rate == glb_ptr->set_rate) && (lowpass == glb_ptr->set_lowpass)
 			&& (mode == glb_ptr->set_mode))
 		return 0;
 
-	glb_ptr->set_rate = rate;
-	glb_ptr->set_mode = mode;
-
 	if (mode == 0) { /* 2.0 */
+		snd_soc_write(rtd->codec_dais[0]->codec,
+				PCM512x_MUTE, 0x00);
 		snd_soc_write(rtd->codec_dais[1]->codec,
-			PCM512x_MUTE, 0x11);
+				PCM512x_MUTE, 0x11);
+		glb_ptr->set_rate = rate;
+		glb_ptr->set_mode = mode;
+		glb_ptr->set_lowpass = lowpass;
+		return 1;
+	} else if (mode == 3) { /* dual Stereo */
+		snd_soc_write(rtd->codec_dais[0]->codec,
+				PCM512x_MUTE, 0x00);
+		snd_soc_write(rtd->codec_dais[1]->codec,
+				PCM512x_MUTE, 0x00);
+		glb_ptr->set_rate = rate;
+		glb_ptr->set_mode = mode;
+		glb_ptr->set_lowpass = lowpass;
+		return 1;
+	} else if (mode == 4) { /* dual Mono */
+		snd_soc_write(rtd->codec_dais[0]->codec,
+				PCM512x_MUTE, 0x01);
+		snd_soc_write(rtd->codec_dais[1]->codec,
+				PCM512x_MUTE, 0x10);
+		glb_ptr->set_rate = rate;
+		glb_ptr->set_mode = mode;
+		glb_ptr->set_lowpass = lowpass;
 		return 1;
 	} else {
+		snd_soc_write(rtd->codec_dais[0]->codec,
+				PCM512x_MUTE, 0x00);
 		snd_soc_write(rtd->codec_dais[1]->codec,
-			PCM512x_MUTE, 0x00);
+				PCM512x_MUTE, 0x00);
 	}
-
-	glb_ptr->set_lowpass = lowpass;
 
 	for (dac = 0; dac < rtd->num_codecs; dac++) {
 		struct dsp_code *dsp_code_read;
-		int i = 1;
 		struct snd_soc_codec *codec = rtd->codec_dais[dac]->codec;
+		int i = 1;
 
 		if (dac == 0) { /* high */
 			sprintf(firmware_name,
-				"alloPiano/2.2/allo-piano-dsp-%d-%d-%d.bin",
-				rate, ((glb_ptr->set_lowpass * 10) + 60), dac);
+				"allo/piano/2.2/allo-piano-dsp-%d-%d-%d.bin",
+				rate, ((lowpass * 10) + 60), dac);
 		} else { /* low */
 			sprintf(firmware_name,
-				"alloPiano/2.%d/allo-piano-dsp-%d-%d-%d.bin",
-				glb_ptr->set_mode, rate,
-				((glb_ptr->set_lowpass * 10) + 60), dac);
+				"allo/piano/2.%d/allo-piano-dsp-%d-%d-%d.bin",
+				mode, rate, ((lowpass * 10) + 60), dac);
 		}
 
 		dev_info(codec->dev, "Dsp Firmware File Name: %s\n",
-			firmware_name);
+				firmware_name);
 
 		ret = request_firmware(&fw, firmware_name, codec->dev);
 		if (ret < 0) {
 			dev_err(codec->dev,
-				"Error: AlloPiano Firmware %s missing. %d\n",
+				"Error: Allo Piano Firmware %s missing. %d\n",
 				firmware_name, ret);
-			continue;
+			goto err;
 		}
 
 		while (i < (fw->size - 1)) {
@@ -157,18 +186,24 @@ static int __snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
 						glb_ptr->dsp_page_number) +
 					dsp_code_read->offset),
 					dsp_code_read->val);
-
 			}
 			if (ret < 0) {
 				dev_err(codec->dev,
 					"Failed to write Register: %d\n", ret);
-				break;
+				release_firmware(fw);
+				goto err;
 			}
 			i = i + 3;
 		}
 		release_firmware(fw);
 	}
+	glb_ptr->set_rate = rate;
+	glb_ptr->set_mode = mode;
+	glb_ptr->set_lowpass = lowpass;
 	return 1;
+
+err:
+	return ret;
 }
 
 static int snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
@@ -378,6 +413,65 @@ static int snd_allo_piano_dac_init(struct snd_soc_pcm_runtime *rtd)
 	return 0;
 }
 
+static void snd_allo_piano_gpio_mute(struct snd_soc_card *card)
+{
+	if (mute_gpio[0])
+		gpiod_set_value_cansleep(mute_gpio[0], 1);
+
+	if (mute_gpio[1])
+		gpiod_set_value_cansleep(mute_gpio[1], 1);
+}
+
+static void snd_allo_piano_gpio_unmute(struct snd_soc_card *card)
+{
+	if (mute_gpio[0])
+		gpiod_set_value_cansleep(mute_gpio[0], 0);
+
+	if (mute_gpio[1])
+		gpiod_set_value_cansleep(mute_gpio[1], 0);
+}
+
+static int snd_allo_piano_set_bias_level(struct snd_soc_card *card,
+	struct snd_soc_dapm_context *dapm, enum snd_soc_bias_level level)
+{
+	struct snd_soc_dai *codec_dai = card->rtd[0].codec_dai;
+
+	if (dapm->dev != codec_dai->dev)
+		return 0;
+
+	switch (level) {
+	case SND_SOC_BIAS_PREPARE:
+		if (dapm->bias_level != SND_SOC_BIAS_STANDBY)
+			break;
+		/* UNMUTE DAC */
+		snd_allo_piano_gpio_unmute(card);
+		break;
+
+	case SND_SOC_BIAS_STANDBY:
+		if (dapm->bias_level != SND_SOC_BIAS_PREPARE)
+			break;
+		/* MUTE DAC */
+		snd_allo_piano_gpio_mute(card);
+		break;
+
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static int snd_allo_piano_dac_startup(
+	struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_card *card = rtd->card;
+
+	snd_allo_piano_gpio_mute(card);
+
+	return 0;
+}
+
 static int snd_allo_piano_dac_hw_params(
 		struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *params)
@@ -389,7 +483,38 @@ static int snd_allo_piano_dac_hw_params(
 	unsigned int rate = params_rate(params);
 	struct snd_soc_card *card = rtd->card;
 	struct glb_pool *glb_ptr = card->drvdata;
-	int ret = 0;
+	int ret = 0, val = 0, dac;
+
+	for (dac = 0; (glb_mclk && dac < 2); dac++) {
+		/* Configure the PLL clock reference for both the Codecs */
+		val = snd_soc_read(rtd->codec_dais[dac]->codec,
+					PCM512x_RATE_DET_4);
+		if (val < 0) {
+			dev_err(rtd->codec_dais[dac]->codec->dev,
+				"Failed to read register PCM512x_RATE_DET_4\n");
+			return val;
+		}
+
+		if (val & 0x40) {
+			snd_soc_write(rtd->codec_dais[dac]->codec,
+					PCM512x_PLL_REF,
+					PCM512x_SREF_BCK);
+
+			dev_info(rtd->codec_dais[dac]->codec->dev,
+				"Setting BCLK as input clock & Enable PLL\n");
+		} else {
+			snd_soc_write(rtd->codec_dais[dac]->codec,
+					PCM512x_PLL_EN,
+					0x00);
+
+			snd_soc_write(rtd->codec_dais[dac]->codec,
+					PCM512x_PLL_REF,
+					PCM512x_SREF_SCK);
+
+			dev_info(rtd->codec_dais[dac]->codec->dev,
+				"Setting SCLK as input clock & disabled PLL\n");
+		}
+	}
 
 	if (digital_gain_0db_limit) {
 		ret = snd_soc_limit_volume(card,
@@ -408,9 +533,21 @@ static int snd_allo_piano_dac_hw_params(
 	return ret;
 }
 
+static int snd_allo_piano_dac_prepare(
+	struct snd_pcm_substream *substream)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_card *card = rtd->card;
+
+	snd_allo_piano_gpio_unmute(card);
+	return 0;
+}
+
 /* machine stream operations */
 static struct snd_soc_ops snd_allo_piano_dac_ops = {
+	.startup = snd_allo_piano_dac_startup,
 	.hw_params = snd_allo_piano_dac_hw_params,
+	.prepare = snd_allo_piano_dac_prepare,
 };
 
 static struct snd_soc_dai_link_component allo_piano_2_1_codecs[] = {
@@ -450,10 +587,11 @@ static struct snd_soc_card snd_allo_piano_dac = {
 
 static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 {
-	int ret = 0, i = 0;
 	struct snd_soc_card *card = &snd_allo_piano_dac;
+	int ret = 0, i = 0;
 
 	card->dev = &pdev->dev;
+	platform_set_drvdata(pdev, &snd_allo_piano_dac);
 
 	if (pdev->dev.of_node) {
 		struct device_node *i2s_node;
@@ -461,7 +599,7 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 
 		dai = &snd_allo_piano_dac_dai[0];
 		i2s_node = of_parse_phandle(pdev->dev.of_node,
-				"i2s-controller", 0);
+						"i2s-controller", 0);
 		if (i2s_node) {
 			for (i = 0; i < card->num_links; i++) {
 				dai->cpu_dai_name = NULL;
@@ -472,7 +610,10 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 		}
 		digital_gain_0db_limit =
 			!of_property_read_bool(pdev->dev.of_node,
-					"allo,24db_digital_gain");
+						"allo,24db_digital_gain");
+
+		glb_mclk = of_property_read_bool(pdev->dev.of_node,
+						"allo,glb_mclk");
 
 		allo_piano_2_1_codecs[0].of_node =
 			of_parse_phandle(pdev->dev.of_node, "audio-codec", 0);
@@ -490,12 +631,39 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 			return -EINVAL;
 		}
 
+		mute_gpio[0] = devm_gpiod_get_optional(&pdev->dev, "mute1",
+							GPIOD_OUT_LOW);
+		if (IS_ERR(mute_gpio[0])) {
+			ret = PTR_ERR(mute_gpio[0]);
+			dev_err(&pdev->dev,
+				"failed to get mute1 gpio6: %d\n", ret);
+			return ret;
+		}
+
+		mute_gpio[1] = devm_gpiod_get_optional(&pdev->dev, "mute2",
+							GPIOD_OUT_LOW);
+		if (IS_ERR(mute_gpio[1])) {
+			ret = PTR_ERR(mute_gpio[1]);
+			dev_err(&pdev->dev,
+				"failed to get mute2 gpio25: %d\n", ret);
+			return ret;
+		}
+
+		if (mute_gpio[0] && mute_gpio[1])
+			snd_allo_piano_dac.set_bias_level =
+				snd_allo_piano_set_bias_level;
+
 		ret = snd_soc_register_card(&snd_allo_piano_dac);
-		if (ret < 0)
+		if (ret < 0) {
 			dev_err(&pdev->dev,
 				"snd_soc_register_card() failed: %d\n", ret);
+			return ret;
+		}
 
-		return ret;
+		if ((mute_gpio[0]) && (mute_gpio[1]))
+			snd_allo_piano_gpio_mute(&snd_allo_piano_dac);
+
+		return 0;
 	}
 
 	return -EINVAL;
@@ -503,6 +671,10 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 
 static int snd_allo_piano_dac_remove(struct platform_device *pdev)
 {
+	struct snd_soc_card *card = platform_get_drvdata(pdev);
+
+	kfree(&card->drvdata);
+	snd_allo_piano_gpio_mute(&snd_allo_piano_dac);
 	return snd_soc_unregister_card(&snd_allo_piano_dac);
 }
 

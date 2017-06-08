@@ -1,6 +1,4 @@
 /*
- * Copyright 2015 Hans de Goede <hdegoede@redhat.com>
- *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
  * licensing only applies to this file, and not this project as a
@@ -40,26 +38,11 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/dts-v1/;
-#include "sun8i-a33.dtsi"
-#include "sun8i-q8-common.dtsi"
+#ifndef __DT_BINDINGS_DMA_AXI_DMAC_H__
+#define __DT_BINDINGS_DMA_AXI_DMAC_H__
 
-/ {
-	model = "Q8 A33 Tablet";
-	compatible = "allwinner,q8-a33", "allwinner,sun8i-a33";
-};
+#define AXI_DMAC_BUS_TYPE_AXI_MM		0
+#define AXI_DMAC_BUS_TYPE_AXI_STREAM	1
+#define AXI_DMAC_BUS_TYPE_FIFO			2
 
-/*
- * FIXME for now we only support host mode and rely on u-boot to have
- * turned on Vbus which is controlled by the axp223 pmic on the board.
- *
- * Once we have axp223 support we should switch to fully supporting otg.
- */
-&usb_otg {
-	dr_mode = "host";
-	status = "okay";
-};
-
-&usbphy {
-	status = "okay";
-};
+#endif

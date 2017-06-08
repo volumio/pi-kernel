@@ -1,5 +1,7 @@
 /*
- * Copyright 2015 Hans de Goede <hdegoede@redhat.com>
+ * Copyright 2014 Maxime Ripard
+ *
+ * Maxime Ripard <maxime.ripard@free-electrons.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -15,6 +17,11 @@
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *     GNU General Public License for more details.
+ *
+ *     You should have received a copy of the GNU General Public
+ *     License along with this file; if not, write to the Free
+ *     Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
+ *     MA 02110-1301 USA
  *
  * Or, alternatively,
  *
@@ -40,26 +47,16 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/dts-v1/;
-#include "sun8i-a33.dtsi"
-#include "sun8i-q8-common.dtsi"
+#ifndef __DT_BINDINGS_PINCTRL_SUN4I_A10_H_
+#define __DT_BINDINGS_PINCTRL_SUN4I_A10_H_
 
-/ {
-	model = "Q8 A33 Tablet";
-	compatible = "allwinner,q8-a33", "allwinner,sun8i-a33";
-};
+#define SUN4I_PINCTRL_10_MA	0
+#define SUN4I_PINCTRL_20_MA	1
+#define SUN4I_PINCTRL_30_MA	2
+#define SUN4I_PINCTRL_40_MA	3
 
-/*
- * FIXME for now we only support host mode and rely on u-boot to have
- * turned on Vbus which is controlled by the axp223 pmic on the board.
- *
- * Once we have axp223 support we should switch to fully supporting otg.
- */
-&usb_otg {
-	dr_mode = "host";
-	status = "okay";
-};
+#define SUN4I_PINCTRL_NO_PULL	0
+#define SUN4I_PINCTRL_PULL_UP	1
+#define SUN4I_PINCTRL_PULL_DOWN	2
 
-&usbphy {
-	status = "okay";
-};
+#endif /* __DT_BINDINGS_PINCTRL_SUN4I_A10_H_ */

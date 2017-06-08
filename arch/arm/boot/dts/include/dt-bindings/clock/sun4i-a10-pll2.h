@@ -1,5 +1,7 @@
 /*
- * Copyright 2015 Hans de Goede <hdegoede@redhat.com>
+ * Copyright 2015 Maxime Ripard
+ *
+ * Maxime Ripard <maxime.ripard@free-electrons.com>
  *
  * This file is dual-licensed: you can use it either under the terms
  * of the GPL or the X11 license, at your option. Note that this dual
@@ -40,26 +42,12 @@
  *     OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/dts-v1/;
-#include "sun8i-a33.dtsi"
-#include "sun8i-q8-common.dtsi"
+#ifndef __DT_BINDINGS_CLOCK_SUN4I_A10_PLL2_H_
+#define __DT_BINDINGS_CLOCK_SUN4I_A10_PLL2_H_
 
-/ {
-	model = "Q8 A33 Tablet";
-	compatible = "allwinner,q8-a33", "allwinner,sun8i-a33";
-};
+#define SUN4I_A10_PLL2_1X	0
+#define SUN4I_A10_PLL2_2X	1
+#define SUN4I_A10_PLL2_4X	2
+#define SUN4I_A10_PLL2_8X	3
 
-/*
- * FIXME for now we only support host mode and rely on u-boot to have
- * turned on Vbus which is controlled by the axp223 pmic on the board.
- *
- * Once we have axp223 support we should switch to fully supporting otg.
- */
-&usb_otg {
-	dr_mode = "host";
-	status = "okay";
-};
-
-&usbphy {
-	status = "okay";
-};
+#endif /* __DT_BINDINGS_CLOCK_SUN4I_A10_PLL2_H_ */

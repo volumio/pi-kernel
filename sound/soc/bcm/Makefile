@@ -17,6 +17,7 @@ snd-soc-raspidac3-objs := raspidac3.o
 snd-soc-allo-boss-dac-objs := allo-boss-dac.o
 snd-soc-allo-piano-dac-objs := allo-piano-dac.o
 snd-soc-allo-piano-dac-plus-objs := allo-piano-dac-plus.o
+snd-soc-allo-digione-objs := allo-digione.o
 
 obj-$(CONFIG_SND_BCM2708_SOC_HIFIBERRY_DAC) += snd-soc-hifiberry-dac.o
 obj-$(CONFIG_SND_BCM2708_SOC_HIFIBERRY_DACPLUS) += snd-soc-hifiberry-dacplus.o
@@ -31,3 +32,4 @@ obj-$(CONFIG_SND_BCM2708_SOC_RASPIDAC3) += snd-soc-raspidac3.o
 obj-$(CONFIG_SND_BCM2708_SOC_ALLO_BOSS_DAC) += snd-soc-allo-boss-dac.o
 obj-$(CONFIG_SND_BCM2708_SOC_ALLO_PIANO_DAC) += snd-soc-allo-piano-dac.o
 obj-$(CONFIG_SND_BCM2708_SOC_ALLO_PIANO_DAC_PLUS) += snd-soc-allo-piano-dac-plus.o
+obj-$(CONFIG_SND_BCM2708_SOC_ALLO_DIGIONE) += snd-soc-allo-digione.o

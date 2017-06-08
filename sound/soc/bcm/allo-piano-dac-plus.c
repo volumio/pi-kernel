@@ -47,11 +47,12 @@ bool glb_mclk;
 
 static struct gpio_desc *mute_gpio[2];
 
-
 static const char * const allo_piano_mode_texts[] = {
 	"2.0",
 	"2.1",
 	"2.2",
+	"Dual Stereo",
+	"Dual Mono",
 };
 
 static const SOC_ENUM_SINGLE_DECL(allo_piano_mode_enum,
@@ -102,7 +103,7 @@ static int __snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
 
 	if ((lowpass > 14) || (lowpass < 0))
 		lowpass = 3;
-	if ((mode > 2) || (mode < 0))
+	if ((mode > 4) || (mode < 0))
 		mode = 0;
 
 	/* same configuration loaded */
@@ -111,13 +112,35 @@ static int __snd_allo_piano_dsp_program(struct snd_soc_pcm_runtime *rtd,
 		return 0;
 
 	if (mode == 0) { /* 2.0 */
+		snd_soc_write(rtd->codec_dais[0]->codec,
+				PCM512x_MUTE, 0x00);
 		snd_soc_write(rtd->codec_dais[1]->codec,
 				PCM512x_MUTE, 0x11);
 		glb_ptr->set_rate = rate;
 		glb_ptr->set_mode = mode;
 		glb_ptr->set_lowpass = lowpass;
 		return 1;
+	} else if (mode == 3) { /* dual Stereo */
+		snd_soc_write(rtd->codec_dais[0]->codec,
+				PCM512x_MUTE, 0x00);
+		snd_soc_write(rtd->codec_dais[1]->codec,
+				PCM512x_MUTE, 0x00);
+		glb_ptr->set_rate = rate;
+		glb_ptr->set_mode = mode;
+		glb_ptr->set_lowpass = lowpass;
+		return 1;
+	} else if (mode == 4) { /* dual Mono */
+		snd_soc_write(rtd->codec_dais[0]->codec,
+				PCM512x_MUTE, 0x01);
+		snd_soc_write(rtd->codec_dais[1]->codec,
+				PCM512x_MUTE, 0x10);
+		glb_ptr->set_rate = rate;
+		glb_ptr->set_mode = mode;
+		glb_ptr->set_lowpass = lowpass;
+		return 1;
 	} else {
+		snd_soc_write(rtd->codec_dais[0]->codec,
+				PCM512x_MUTE, 0x00);
 		snd_soc_write(rtd->codec_dais[1]->codec,
 				PCM512x_MUTE, 0x00);
 	}

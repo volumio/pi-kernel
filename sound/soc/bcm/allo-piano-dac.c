@@ -96,8 +96,8 @@ static int snd_allo_piano_dac_hw_params(
 
 	unsigned int sample_bits =
 		snd_pcm_format_physical_width(params_format(params));
-	int ret = 0, dac =0, val = 0;
-	
+	int ret = 0, dac = 0, val = 0;
+
 	for (dac = 0; (glb_mclk && dac < 2); dac++) {
 		val = snd_soc_read(rtd->codec, PCM512x_RATE_DET_4);
 		if (val < 0) {
@@ -140,7 +140,7 @@ static int snd_allo_piano_dac_startup(
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_card *card = rtd->card;
-	
+
 	snd_allo_piano_dac_gpio_mute(card);
 	return 0;
 }
@@ -217,7 +217,7 @@ static int snd_allo_piano_dac_probe(struct platform_device *pdev)
 				"failed to get mute gpio: %d\n", ret);
 			return ret;
 		}
-		
+
 		glb_mclk = of_property_read_bool(pdev->dev.of_node,
 						"allo,glb_mclk");
 
